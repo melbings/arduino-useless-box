@@ -2,6 +2,7 @@
 
   /*
    * Finger nicht ganz hin, zögern, langsam zurückziehen, schnell umschalten und zurückziehen (man könnte auch mehrmals "foppen" bevor der Schalter tatsächlich umgelegt wird)
+   * -> Ohne foppen am 23.01.21 gemacht
    * 
    * Falls möglich: Globaler Timer, falls x Sekunden kein User-Input kam, reagieren (z.B. aufgehen oder Finger raus)
    * 
@@ -32,6 +33,19 @@ const int SOUND_E4 = 330;
 const int SOUND_G4 = 392;
 const int SOUND_C5 = 523;
 
+const int ARM_POS_BACK = 20;
+const int ARM_POS_ALMOST = 97;
+const int ARM_POS_ALMOSTBITBACK = 70;
+const int ARM_POS_PUSH = 107;
+const int ARM_POS_PUSHSTOPMOTOR = 103;
+const int BOX_POS_CLOSED = 120;
+const int BOX_POS_OPEN = 156;
+const int BOX_POS_OPENLITTLEBIT = 140;
+const int FLAG_POS_HIDDEN = 10;
+const int FLAG_POS_LEFT = 55;
+const int FLAG_POS_RIGHT = 110;
+
+
 Servo arm;
 Servo box;
 Servo flag;
@@ -41,7 +55,7 @@ int darkPhotoValue;
 void setup() {
   pinMode(BUTTON_PIN, INPUT);
   pinMode(PHOTO_PIN, INPUT);
-
+  
   pinMode(LED_BLUE_PIN, OUTPUT);
   pinMode(LED_RED_PIN, OUTPUT);
   pinMode(SOUND_PIN, OUTPUT);
@@ -50,12 +64,12 @@ void setup() {
   box.attach(SERVO_BOX_PIN);
   flag.attach(SERVO_FLAG_PIN);
   
-  box.write(120);
-  arm.write(20);
-  flag.write(10);
-
+  box.write(BOX_POS_CLOSED);
+  arm.write(ARM_POS_BACK);
+  flag.write(FLAG_POS_HIDDEN);
+  
   delay(3000);
-
+  
   waitForButton(BUTTON_DOWN, false);
   determineDarkPhotoValue();
 }
@@ -63,7 +77,7 @@ void setup() {
 void determineDarkPhotoValue() {
   tone(SOUND_PIN, SOUND_C4); delay(200);
   noTone(SOUND_PIN);
-
+  
   int photoValueSum = 0;
   for (int i = 0; i < 50; i++) {
     int photoValue = analogRead(PHOTO_PIN);
@@ -71,10 +85,10 @@ void determineDarkPhotoValue() {
     
     photoValueSum += photoValue;
   }
-
+  
   int averagePhotoValue = photoValueSum / 50;
   darkPhotoValue = averagePhotoValue + 5;
-  
+   
   tone(SOUND_PIN, SOUND_C4); delay(200);
   noTone(SOUND_PIN);
 }
@@ -91,40 +105,69 @@ void loop() {
       // Normal
       openBox();
       pushTheButton();
+      retractArm();
       closeBox();
       break;
 
     case 3:
-      // Warten, dann normal
-      delay(1600);
+      // Kurz vor dem Schalter zögern, dann drücken
       openBox();
-      pushTheButton();
+      almostPushTheButton();
+      delay(1600);
+      pushTheButton(0, 0, 3);
+      retractArm();
       closeBox();
       break;
 
     case 4:
-      // Öffnen, Fanfare, Push
-      fanfare();
+      // Warten, dann normal
+      delay(1600);
       openBox();
       pushTheButton();
+      retractArm();
       closeBox();
       break;
 
     case 5:
-      // Normal
+      // Fanfare, öffnen, push
+      fanfare();
       openBox();
       pushTheButton();
+      retractArm();
       closeBox();
       break;
 
     case 6:
-      // Mit Nachdruck
+      // Normal
       openBox();
-      pushTheButton(1500);
+      pushTheButton();
+      retractArm();
+      closeBox();
+      break;
+      
+    case 7:
+      openBox();
+      almostPushTheButton();
+      delay(1000);
+      for (int u = arm.read(); u > ARM_POS_ALMOSTBITBACK; u--) {
+        arm.write(u);
+        delay(10);
+      }
+      delay(200);
+      pushTheButton();
+      retractArm();
       closeBox();
       break;
 
-    case 7:
+    case 8:
+      // Mit Nachdruck
+      openBox();
+      pushTheButton(400, 1500, 0);
+      retractArm();
+      closeBox();
+      break;
+
+    case 9:
       // Auf, zu, auf, push, zu
       openBox();
       delay(600);
@@ -132,20 +175,7 @@ void loop() {
       delay(2000);
       openBox();
       pushTheButton();
-      closeBox();
-      break;
-
-    case 8:
-      // Normal
-      openBox();
-      pushTheButton();
-      closeBox();
-      break;
-
-    case 9:
-      // Einhämmern
-      openBox();
-      pushTheButtonRepeatedly();
+      retractArm();
       closeBox();
       break;
 
@@ -153,25 +183,57 @@ void loop() {
       // Normal
       openBox();
       pushTheButton();
+      retractArm();
       closeBox();
       break;
 
     case 11:
+      // Einhämmern
+      openBox();
+
+      pushTheButton(300, 0, 0);
+    
+      for (int i = 0; i < 12; i++) {
+        arm.write(85);
+        delay(100);
+    
+        arm.write(110);
+        delay(100);
+      } 
+    
+      delay(1000);
+      waitForButton(BUTTON_DOWN, false);
+
+      retractArm();
+      closeBox();
+      break;
+
+    case 12:
       // Normal
       openBox();
       pushTheButton();
+      retractArm();
+      closeBox();
+      break;
+
+    case 13:
+      // Normal, dann nochmal nachschauen
+      openBox();
+      pushTheButton();
+      retractArm();
       closeBox();
       openBoxALittleBit();
       delay(2500);
       closeBox();
       break;
 
-    case 12:
+    case 14:
       // Aufgabe
       openBox();
       delay(1000);
       surrender();
       pushTheButton();
+      retractArm();
       closeBox();
       stage = 0;
       break;
@@ -208,55 +270,51 @@ void waitForButton(int state, bool warnWhenOpen) {
 }
 
 void openBox() {
-  for (int i = 120; i <= 156; i++) {
+  for (int i = box.read(); i <= BOX_POS_OPEN; i++) {
     box.write(i);
     delay(10);
   }
 }
 
 void openBoxALittleBit() {
-  for (int i = 120; i <= 140; i++) {
+  for (int i = box.read(); i <= BOX_POS_OPENLITTLEBIT; i++) {
     box.write(i);
     delay(10);
   }  
 }
 
+void almostPushTheButton() {
+  arm.write(ARM_POS_ALMOST);
+  delay(350);
+}
+
 void pushTheButton() {
-  pushTheButton(0);
+  pushTheButton(400, 0, 0);
 }
 
-void pushTheButton(int extraTimeOnButton) {
-  arm.write(110);
-  delay(400 + extraTimeOnButton);
+void pushTheButton(int pressingDelay, int afterPressingDelay, int extraAngle) {
+  arm.write(ARM_POS_PUSH + extraAngle);
+  delay(pressingDelay);
 
-  arm.write(20);
-  delay(300);
+  if (afterPressingDelay > 0) {
+    arm.write(ARM_POS_PUSHSTOPMOTOR);
+    delay(afterPressingDelay);
+  }
 
   waitForButton(BUTTON_DOWN, false);
 }
 
-void pushTheButtonRepeatedly() {
-  arm.write(110);
-  delay(300);
+void retractArm() {
+  retractArm(300);
+}
 
-  for (int i = 0; i < 12; i++) {
-    arm.write(85);
-    delay(100);
-
-    arm.write(110);
-    delay(100);
-  } 
-
-  delay(1000);
-
-  arm.write(20);
-  delay(300);
-
-  waitForButton(BUTTON_DOWN, false);
+void retractArm(int afterRetractingDelay) {
+  arm.write(ARM_POS_BACK);
+  delay(afterRetractingDelay);
 }
 
 void closeBox() {
-    for (int i = 156; i >= 120; i--) {
+  for (int i = box.read(); i >= BOX_POS_CLOSED; i--) {
     box.write(i);
     delay(10);
   }
@@ -298,14 +356,14 @@ void surrender() {
 
   for (int i = 0; i < 5; i++) {
     if (i > 0) {
-      flag.write(55);
+      flag.write(FLAG_POS_LEFT);
       delay(500);    
     }
 
-    flag.write(110);
+    flag.write(FLAG_POS_RIGHT);
     delay(500);
   }
 
-  flag.write(10);
+  flag.write(FLAG_POS_HIDDEN);
   delay(1500);
 }
